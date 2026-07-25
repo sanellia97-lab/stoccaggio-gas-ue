@@ -1,0 +1,38 @@
+name: Aggiorna dati stoccaggio gas Ue
+
+on:
+  schedule:
+    # 20:15 CET/CEST = 19:15 UTC (l'API AGSI pubblica i dati nuovi alle 19:30 CET)
+    - cron: "15 19 * * *"
+  workflow_dispatch: {}   # permette anche l'avvio manuale dalla tab "Actions"
+
+permissions:
+  contents: write
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Scarica dati e genera CSV
+        env:
+          AGSI_API_KEY: ${{ secrets.AGSI_API_KEY }}
+        run: python fetch_agsi.py
+
+      - name: Commit e push del CSV aggiornato
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.csv
+          git diff --staged --quiet || git commit -m "Aggiorna dati stoccaggio gas Ue"
+          git push

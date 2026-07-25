@@ -14,6 +14,8 @@ import time
 from datetime import date, timedelta
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 API_KEY = os.environ.get("AGSI_API_KEY")
 if not API_KEY:
@@ -46,6 +48,17 @@ PAESI = {
 HEADERS = {"x-key": API_KEY}
 BASE_URL = "https://agsi.gie.eu/api"
 
+# Sessione con retry automatici: se il server risponde lentamente o con
+# errori temporanei (5xx, 429), ritenta fino a 5 volte con attesa crescente
+session = requests.Session()
+retry_strategy = Retry(
+    total=5,
+    backoff_factor=2,  # attende 2s, 4s, 8s, 16s, 32s tra i tentativi
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["GET"],
+)
+session.mount("https://", HTTPAdapter(max_retries=retry_strategy))
+
 oggi = date.today()
 da_data = (oggi - timedelta(days=10)).isoformat()
 a_data = oggi.isoformat()
@@ -64,7 +77,7 @@ for nome_it, codice in PAESI.items():
     else:
         params["country"] = codice
 
-    resp = requests.get(BASE_URL, headers=HEADERS, params=params, timeout=30)
+    resp = session.get(BASE_URL, headers=HEADERS, params=params, timeout=60)
     resp.raise_for_status()
     payload = resp.json()
 

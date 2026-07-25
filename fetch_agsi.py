@@ -11,6 +11,8 @@ import csv
 import os
 import sys
 import time
+from datetime import date, timedelta
+
 import requests
 
 API_KEY = os.environ.get("AGSI_API_KEY")
@@ -18,6 +20,7 @@ if not API_KEY:
     sys.exit("Errore: variabile d'ambiente AGSI_API_KEY non impostata.")
 
 # Nome da mostrare in italiano -> codice paese usato dall'API AGSI
+# "EU" e' un caso speciale: usa il parametro type=eu invece di country=
 PAESI = {
     "Portogallo": "PT",
     "Spagna": "ES",
@@ -43,25 +46,45 @@ PAESI = {
 HEADERS = {"x-key": API_KEY}
 BASE_URL = "https://agsi.gie.eu/api"
 
+oggi = date.today()
+da_data = (oggi - timedelta(days=10)).isoformat()
+a_data = oggi.isoformat()
+
 righe = []
-gas_day = None
+gas_day_piu_recente = None
 
 for nome_it, codice in PAESI.items():
-    params = {"country": codice, "date": "latest"}
+    params = {
+        "from": da_data,
+        "to": a_data,
+        "size": 30,
+    }
+    if codice == "EU":
+        params["type"] = "eu"
+    else:
+        params["country"] = codice
+
     resp = requests.get(BASE_URL, headers=HEADERS, params=params, timeout=30)
     resp.raise_for_status()
     payload = resp.json()
 
-    # L'API restituisce una lista "data" con l'ultimo record disponibile
-    record = payload["data"][0] if isinstance(payload, dict) and "data" in payload else payload
+    entries = payload.get("data", [])
+    if not entries:
+        print(f"Attenzione: nessun dato per {nome_it} ({codice})", file=sys.stderr)
+        time.sleep(0.3)
+        continue
+
+    # Prendi il record con la data (gasDayStart) piu' recente
+    record = max(entries, key=lambda e: e["gasDayStart"])
 
     valore_full = record.get("full")
     if valore_full is None:
-        print(f"Attenzione: nessun dato per {nome_it} ({codice})", file=sys.stderr)
+        print(f"Attenzione: campo 'full' mancante per {nome_it}", file=sys.stderr)
+        time.sleep(0.3)
         continue
 
-    if gas_day is None:
-        gas_day = record.get("gasDayStart")
+    if gas_day_piu_recente is None or record["gasDayStart"] > gas_day_piu_recente:
+        gas_day_piu_recente = record["gasDayStart"]
 
     # Colore: azzurro per l'Italia, verde per l'Unione europea, verde acqua per gli altri
     if nome_it == "Italia":
@@ -76,9 +99,12 @@ for nome_it, codice in PAESI.items():
         "riempimento_%": round(float(valore_full), 1),
         "colore": colore,
     })
-    time.sleep(0.3)  # cortesia verso l'API
+    time.sleep(0.3)  # cortesia verso l'API (limite 60 chiamate/minuto)
 
-# Ordina come nel grafico originale: dal valore più alto al più basso
+if not righe:
+    sys.exit("Errore: nessun dato scaricato per nessun paese, controlla la API key.")
+
+# Ordina come nel grafico originale: dal valore piu' alto al piu' basso
 righe.sort(key=lambda r: r["riempimento_%"], reverse=True)
 
 out_path = os.path.join(os.path.dirname(__file__), "data.csv")
@@ -87,4 +113,4 @@ with open(out_path, "w", newline="", encoding="utf-8") as f:
     writer.writeheader()
     writer.writerows(righe)
 
-print(f"CSV generato con {len(righe)} righe. Gas day: {gas_day}")
+print(f"CSV generato con {len(righe)} righe. Ultimo gas day: {gas_day_piu_recente}")

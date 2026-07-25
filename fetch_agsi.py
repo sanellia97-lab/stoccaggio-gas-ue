@@ -8,6 +8,7 @@ gratuita, ottenibile su https://agsi.gie.eu/account).
 """
 
 import csv
+import json
 import os
 import sys
 import time
@@ -16,6 +17,12 @@ from datetime import date, timedelta
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+MESI_ITALIANI = {
+    1: "gennaio", 2: "febbraio", 3: "marzo", 4: "aprile",
+    5: "maggio", 6: "giugno", 7: "luglio", 8: "agosto",
+    9: "settembre", 10: "ottobre", 11: "novembre", 12: "dicembre",
+}
 
 API_KEY = os.environ.get("AGSI_API_KEY")
 if not API_KEY:
@@ -127,3 +134,19 @@ with open(out_path, "w", newline="", encoding="utf-8") as f:
     writer.writerows(righe)
 
 print(f"CSV generato con {len(righe)} righe. Ultimo gas day: {gas_day_piu_recente}")
+
+# Genera il sottotitolo in italiano, es: "Riempimento al 24 luglio"
+anno, mese, giorno = (int(x) for x in gas_day_piu_recente.split("-"))
+sottotitolo = f"Riempimento al {giorno} {MESI_ITALIANI[mese]}"
+
+metadata = {
+    "describe": {
+        "intro": sottotitolo
+    }
+}
+
+metadata_path = os.path.join(os.path.dirname(__file__), "metadata.json")
+with open(metadata_path, "w", encoding="utf-8") as f:
+    json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+print(f"metadata.json generato con sottotitolo: '{sottotitolo}'")

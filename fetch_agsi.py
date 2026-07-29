@@ -1,7 +1,9 @@
 """
 Scarica il livello di riempimento (%) degli stoccaggi di gas per i paesi Ue
-dall'API AGSI (https://agsi.gie.eu) e genera un CSV pronto per Datawrapper,
-ordinato in modo decrescente come nel grafico originale.
+dall'API AGSI (https://agsi.gie.eu) e genera due CSV pronti per Datawrapper
+(uno in italiano, uno in inglese), ordinati in modo decrescente come nel
+grafico originale, oltre ai relativi file di metadati con il sottotitolo
+automatico.
 
 Richiede la variabile d'ambiente AGSI_API_KEY (la tua chiave personale,
 gratuita, ottenibile su https://agsi.gie.eu/account).
@@ -24,32 +26,38 @@ MESI_ITALIANI = {
     9: "settembre", 10: "ottobre", 11: "novembre", 12: "dicembre",
 }
 
+MESI_INGLESI = {
+    1: "January", 2: "February", 3: "March", 4: "April",
+    5: "May", 6: "June", 7: "July", 8: "August",
+    9: "September", 10: "October", 11: "November", 12: "December",
+}
+
 API_KEY = os.environ.get("AGSI_API_KEY")
 if not API_KEY:
     sys.exit("Errore: variabile d'ambiente AGSI_API_KEY non impostata.")
 
-# Nome da mostrare in italiano -> codice paese usato dall'API AGSI
+# Codice paese usato dall'API AGSI -> (nome italiano, nome inglese)
 # "EU" e' un caso speciale: usa il parametro type=eu invece di country=
 PAESI = {
-    "Portogallo": "PT",
-    "Spagna": "ES",
-    "Italia": "IT",
-    "Polonia": "PL",
-    "Danimarca": "DK",
-    "Austria": "AT",
-    "Ungheria": "HU",
-    "Unione europea": "EU",
-    "Bulgaria": "BG",
-    "Repubblica Ceca": "CZ",
-    "Francia": "FR",
-    "Lettonia": "LV",
-    "Belgio": "BE",
-    "Romania": "RO",
-    "Germania": "DE",
-    "Slovacchia": "SK",
-    "Croazia": "HR",
-    "Svezia": "SE",
-    "Paesi Bassi": "NL",
+    "PT": ("Portogallo", "Portugal"),
+    "ES": ("Spagna", "Spain"),
+    "IT": ("Italia", "Italy"),
+    "PL": ("Polonia", "Poland"),
+    "DK": ("Danimarca", "Denmark"),
+    "AT": ("Austria", "Austria"),
+    "HU": ("Ungheria", "Hungary"),
+    "EU": ("Unione europea", "European Union"),
+    "BG": ("Bulgaria", "Bulgaria"),
+    "CZ": ("Repubblica Ceca", "Czech Republic"),
+    "FR": ("Francia", "France"),
+    "LV": ("Lettonia", "Latvia"),
+    "BE": ("Belgio", "Belgium"),
+    "RO": ("Romania", "Romania"),
+    "DE": ("Germania", "Germany"),
+    "SK": ("Slovacchia", "Slovakia"),
+    "HR": ("Croazia", "Croatia"),
+    "SE": ("Svezia", "Sweden"),
+    "NL": ("Paesi Bassi", "Netherlands"),
 }
 
 HEADERS = {"x-key": API_KEY}
@@ -70,10 +78,11 @@ oggi = date.today()
 da_data = (oggi - timedelta(days=10)).isoformat()
 a_data = oggi.isoformat()
 
-righe = []
+righe_it = []
+righe_en = []
 gas_day_piu_recente = None
 
-for nome_it, codice in PAESI.items():
+for codice, (nome_it, nome_en) in PAESI.items():
     params = {
         "from": da_data,
         "to": a_data,
@@ -107,46 +116,51 @@ for nome_it, codice in PAESI.items():
         gas_day_piu_recente = record["gasDayStart"]
 
     # Colore: azzurro per l'Italia, verde per l'Unione europea, verde acqua per gli altri
-    if nome_it == "Italia":
+    if codice == "IT":
         colore = "#66c2ff"
-    elif nome_it == "Unione europea":
+    elif codice == "EU":
         colore = "#93c464"
     else:
         colore = "#4d9494"
 
-    righe.append({
-        "paese": nome_it,
-        "riempimento_%": round(float(valore_full), 1),
-        "colore": colore,
-    })
+    valore = round(float(valore_full), 1)
+    righe_it.append({"paese": nome_it, "riempimento_%": valore, "colore": colore})
+    righe_en.append({"country": nome_en, "filling_%": valore, "color": colore})
     time.sleep(0.3)  # cortesia verso l'API (limite 60 chiamate/minuto)
 
-if not righe:
+if not righe_it:
     sys.exit("Errore: nessun dato scaricato per nessun paese, controlla la API key.")
 
 # Ordina come nel grafico originale: dal valore piu' alto al piu' basso
-righe.sort(key=lambda r: r["riempimento_%"], reverse=True)
+righe_it.sort(key=lambda r: r["riempimento_%"], reverse=True)
+righe_en.sort(key=lambda r: r["filling_%"], reverse=True)
 
-out_path = os.path.join(os.path.dirname(__file__), "data.csv")
-with open(out_path, "w", newline="", encoding="utf-8") as f:
+cartella = os.path.dirname(__file__)
+
+# --- CSV italiano ---
+with open(os.path.join(cartella, "data.csv"), "w", newline="", encoding="utf-8") as f:
     writer = csv.DictWriter(f, fieldnames=["paese", "riempimento_%", "colore"])
     writer.writeheader()
-    writer.writerows(righe)
+    writer.writerows(righe_it)
 
-print(f"CSV generato con {len(righe)} righe. Ultimo gas day: {gas_day_piu_recente}")
+# --- CSV inglese ---
+with open(os.path.join(cartella, "data_en.csv"), "w", newline="", encoding="utf-8") as f:
+    writer = csv.DictWriter(f, fieldnames=["country", "filling_%", "color"])
+    writer.writeheader()
+    writer.writerows(righe_en)
 
-# Genera il sottotitolo in italiano, es: "Riempimento al 24 luglio"
+print(f"CSV generati ({len(righe_it)} righe). Ultimo gas day: {gas_day_piu_recente}")
+
+# --- Metadati (sottotitolo automatico) ---
 anno, mese, giorno = (int(x) for x in gas_day_piu_recente.split("-"))
-sottotitolo = f"Riempimento al {giorno} {MESI_ITALIANI[mese]}"
 
-metadata = {
-    "describe": {
-        "intro": sottotitolo
-    }
-}
+sottotitolo_it = f"Riempimento al {giorno} {MESI_ITALIANI[mese]}"
+sottotitolo_en = f"Filled as of {giorno} {MESI_INGLESI[mese]}"
 
-metadata_path = os.path.join(os.path.dirname(__file__), "metadata.json")
-with open(metadata_path, "w", encoding="utf-8") as f:
-    json.dump(metadata, f, ensure_ascii=False, indent=2)
+with open(os.path.join(cartella, "metadata.json"), "w", encoding="utf-8") as f:
+    json.dump({"describe": {"intro": sottotitolo_it}}, f, ensure_ascii=False, indent=2)
 
-print(f"metadata.json generato con sottotitolo: '{sottotitolo}'")
+with open(os.path.join(cartella, "metadata_en.json"), "w", encoding="utf-8") as f:
+    json.dump({"describe": {"intro": sottotitolo_en}}, f, ensure_ascii=False, indent=2)
+
+print(f"Sottotitoli generati: IT='{sottotitolo_it}' | EN='{sottotitolo_en}'")

@@ -33,6 +33,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data.csv metadata.json
+          git add data.csv metadata.json data_en.csv metadata_en.json
           git diff --staged --quiet || git commit -m "Aggiorna dati stoccaggio gas Ue"
           git push
